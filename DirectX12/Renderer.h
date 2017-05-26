@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include <dxgi.h>
 #include <d3d12.h>
 #include <wrl.h>
 
@@ -27,6 +28,7 @@ private:
 	ComPtr<ID3D12DescriptorHeap> DsvHeap;
 
 	ComPtr<ID3D12Resource> SwapChainBuffers[SwapChainBufferCount];
+	ComPtr<ID3D12Resource> DepthStencilBuffer;
 
 	UINT RtvDescriptorSize, DsvDescriptorSize, SrvDescriptorSize;
 
@@ -36,7 +38,7 @@ private:
 	void CreateSwapChain(int, int, HWND);
 	void CreateDescriptorHeaps();
 
-	D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentBackBufferView() const;
-	D3D12_CPU_DESCRIPTOR_HANDLE GetDepthStencilView() const;
+	D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentBackBufferHeap() const;
+	D3D12_CPU_DESCRIPTOR_HANDLE GetDepthStencilHeap() const;
 
 };

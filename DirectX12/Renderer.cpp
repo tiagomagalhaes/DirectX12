@@ -97,19 +97,61 @@ void CRenderer::CreateSwapChain(int Width, int Height, HWND hWnd) {
 
 	for (int i = 0; i < SwapChainBufferCount; i++) {
 		SwapChain->GetBuffer(i, __uuidof(ID3D12Resource), &SwapChainBuffers[i]);
-		Device->CreateRenderTargetView(&SwapChainBuffers[i], nullptr, RtvHeapHandle);
+		Device->CreateRenderTargetView(SwapChainBuffers[i].Get(), nullptr, RtvHeapHandle);
 		RtvHeapHandle.Offset(1, RtvDescriptorSize);
 	}
+
+	// Create the depth/stencil buffer and view.
+	D3D12_RESOURCE_DESC DepthStencilDescriptor;
+	DepthStencilDescriptor.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	DepthStencilDescriptor.Alignment = 0;
+	DepthStencilDescriptor.Width = Width;
+	DepthStencilDescriptor.Height = Height;
+	DepthStencilDescriptor.DepthOrArraySize = 1;
+	DepthStencilDescriptor.MipLevels = 1;
+	DepthStencilDescriptor.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	DepthStencilDescriptor.SampleDesc.Count = 4; // 4x MSAA
+	DepthStencilDescriptor.SampleDesc.Quality = 1;
+	DepthStencilDescriptor.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	DepthStencilDescriptor.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+	D3D12_CLEAR_VALUE OptimizedClear;
+	OptimizedClear.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	OptimizedClear.DepthStencil.Depth = 1.0f;
+	OptimizedClear.DepthStencil.Stencil = 0;
+
+	Device->CreateCommittedResource(
+		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+		D3D12_HEAP_FLAG_NONE,
+		&DepthStencilDescriptor,
+		D3D12_RESOURCE_STATE_COMMON,
+		&OptimizedClear,
+		IID_PPV_ARGS(DepthStencilBuffer.GetAddressOf())));
+
+	// Create descriptor to mip level 0 of entire resource using the
+	// format of the resource.
+	Device->CreateDepthStencilView(
+		DepthStencilBuffer.Get(),
+		nullptr,
+		GetDepthStencilHeap());
+
+	// Transition the resource from its initial state to be used as a depth buffer.
+	CommandList->ResourceBarrier(
+		1,
+		&CD3DX12_RESOURCE_BARRIER::Transition(
+			DepthStencilBuffer.Get(),
+			D3D12_RESOURCE_STATE_COMMON,
+			D3D12_RESOURCE_STATE_DEPTH_WRITE));
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE CRenderer::GetCurrentBackBufferView() const {
+D3D12_CPU_DESCRIPTOR_HANDLE CRenderer::GetCurrentBackBufferHeap() const {
 	return CD3DX12_CPU_DESCRIPTOR_HANDLE(
 		RtvHeap->GetCPUDescriptorHandleForHeapStart(),
 		CurrentBackBuffer,
 		RtvDescriptorSize);
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE CRenderer::GetDepthStencilView() const {
+D3D12_CPU_DESCRIPTOR_HANDLE CRenderer::GetDepthStencilHeap() const {
 	return DsvHeap->GetCPUDescriptorHandleForHeapStart();
 }
 
