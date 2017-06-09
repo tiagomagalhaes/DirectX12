@@ -1,36 +1,48 @@
 #include "Renderer.h"
 #include <d3dx12.h>
+#include <comdef.h>
 
 bool CRenderer::Init(int ScreenWidth, int ScreenHeight, HWND hWnd) {
 
 #if(_DEBUG)
 	// Enable debugging if necessary
 	ComPtr<ID3D12Debug> DebugController;
-	D3D12GetDebugInterface(__uuidof(ID3D12Debug), &DebugController);
+	D3D12GetDebugInterface(IID_PPV_ARGS(DebugController.GetAddressOf()));
 	DebugController->EnableDebugLayer();
 #endif // DEBUG
 
 	CreateDevice();
 	CreateDescriptorHeaps();
-	CreateSwapChain(ScreenWidth, ScreenHeight, hWnd);
-
+	SetupSwapChain(ScreenWidth, ScreenHeight, hWnd);
+	SetupViewport(ScreenWidth, ScreenHeight);
 
 	return true;
 }
 
 void CRenderer::CreateDevice() {
+	HRESULT hr;
+	const TCHAR *errorText;
 
 	// DXGI Factory
-	CreateDXGIFactory1(__uuidof(IDXGIFactory1), &DxgiFactory);
+	CreateDXGIFactory1(IID_PPV_ARGS(&DxgiFactory));
+
+#if defined(_DEBUG)
+	ComPtr<ID3D12Debug> debugController;
+	D3D12GetDebugInterface(IID_PPV_ARGS(debugController.GetAddressOf()));
+	debugController->EnableDebugLayer();
+#endif // DEBUG
 
 	// D3D Device
-	D3D12CreateDevice(
+	hr = D3D12CreateDevice(
 		nullptr,
-		D3D_FEATURE_LEVEL::D3D_FEATURE_LEVEL_11_0,
-		__uuidof(ID3D12Device),
-		&Device);
+		D3D_FEATURE_LEVEL::D3D_FEATURE_LEVEL_11_1,
+		IID_PPV_ARGS(&Device));
 
-	Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence), &Fence);
+	errorText = _com_error(hr).ErrorMessage();
+
+	hr = Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(Fence.GetAddressOf()));
+
+	errorText = _com_error(hr).ErrorMessage();
 
 	// Get descriptor sizes
 	RtvDescriptorSize = Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
@@ -43,30 +55,42 @@ void CRenderer::CreateDevice() {
 	QueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 	QueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 
-	Device->CreateCommandQueue(&QueueDesc, __uuidof(ID3D12CommandQueue), &CommandQueue);
-	Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, __uuidof(ID3D12CommandAllocator), &CommandAllocator);
-	Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, CommandAllocator.Get(), nullptr, __uuidof(ID3D12CommandList), &CommandList);
+	hr = Device->CreateCommandQueue(&QueueDesc, IID_PPV_ARGS(CommandQueue.GetAddressOf()));
+	errorText = _com_error(hr).ErrorMessage();
+	hr = Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(CommandAllocator.GetAddressOf()));
+	errorText = _com_error(hr).ErrorMessage();
+	hr = Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, CommandAllocator.Get(), nullptr, IID_PPV_ARGS(CommandList.GetAddressOf()));
+	errorText = _com_error(hr).ErrorMessage();
 
-	CommandList->Close();
+	hr = CommandList->Close();
+	errorText = _com_error(hr).ErrorMessage();
 }
 
 void CRenderer::CreateDescriptorHeaps() {
+	HRESULT hr;
+	const TCHAR *errorText;
+
 	D3D12_DESCRIPTOR_HEAP_DESC RtvHeapDesc;
 	RtvHeapDesc.NumDescriptors = SwapChainBufferCount;
 	RtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 	RtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	RtvHeapDesc.NodeMask = 0;
-	Device->CreateDescriptorHeap(&RtvHeapDesc, __uuidof(ID3D12DescriptorHeap), &RtvHeap);
+	hr = Device->CreateDescriptorHeap(&RtvHeapDesc, IID_PPV_ARGS(RtvHeap.GetAddressOf()));
+	errorText = _com_error(hr).ErrorMessage();
 
 	D3D12_DESCRIPTOR_HEAP_DESC DsvHeapDesc;
 	DsvHeapDesc.NumDescriptors = 1;
 	DsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 	DsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	DsvHeapDesc.NodeMask = 0;
-	Device->CreateDescriptorHeap(&DsvHeapDesc, __uuidof(ID3D12DescriptorHeap), &DsvHeap);
+	hr = Device->CreateDescriptorHeap(&DsvHeapDesc, IID_PPV_ARGS(DsvHeap.GetAddressOf()));
+	errorText = _com_error(hr).ErrorMessage();
 }
 
-void CRenderer::CreateSwapChain(int Width, int Height, HWND hWnd) {
+void CRenderer::SetupSwapChain(int Width, int Height, HWND hWnd) {
+	HRESULT hr;
+	const TCHAR *errorText;
+
 	SwapChain.Reset();
 
 	DXGI_SWAP_CHAIN_DESC SD;
@@ -79,24 +103,24 @@ void CRenderer::CreateSwapChain(int Width, int Height, HWND hWnd) {
 	SD.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
 	SD.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
 
-	// 4 x MSAA
-	SD.SampleDesc.Count = 4;
+	SD.SampleDesc.Count = 1;
 	SD.SampleDesc.Quality = 1;
 
 	SD.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	SD.BufferCount = SwapChainBufferCount;
 	SD.OutputWindow = hWnd;
 	SD.Windowed = true;
-	SD.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+	SD.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	SD.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
-	DxgiFactory->CreateSwapChain(CommandQueue.Get(), &SD, &SwapChain);
+	hr = DxgiFactory->CreateSwapChain(CommandQueue.Get(), &SD, SwapChain.GetAddressOf());
+	errorText = _com_error(hr).ErrorMessage();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE RtvHeapHandle(
 		RtvHeap->GetCPUDescriptorHandleForHeapStart());
 
 	for (int i = 0; i < SwapChainBufferCount; i++) {
-		SwapChain->GetBuffer(i, __uuidof(ID3D12Resource), &SwapChainBuffers[i]);
+		SwapChain->GetBuffer(i, IID_PPV_ARGS(&SwapChainBuffers[i]));
 		Device->CreateRenderTargetView(SwapChainBuffers[i].Get(), nullptr, RtvHeapHandle);
 		RtvHeapHandle.Offset(1, RtvDescriptorSize);
 	}
@@ -110,7 +134,7 @@ void CRenderer::CreateSwapChain(int Width, int Height, HWND hWnd) {
 	DepthStencilDescriptor.DepthOrArraySize = 1;
 	DepthStencilDescriptor.MipLevels = 1;
 	DepthStencilDescriptor.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	DepthStencilDescriptor.SampleDesc.Count = 4; // 4x MSAA
+	DepthStencilDescriptor.SampleDesc.Count = 1;
 	DepthStencilDescriptor.SampleDesc.Quality = 1;
 	DepthStencilDescriptor.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	DepthStencilDescriptor.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
@@ -120,13 +144,14 @@ void CRenderer::CreateSwapChain(int Width, int Height, HWND hWnd) {
 	OptimizedClear.DepthStencil.Depth = 1.0f;
 	OptimizedClear.DepthStencil.Stencil = 0;
 
-	Device->CreateCommittedResource(
+	hr = Device->CreateCommittedResource(
 		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
 		D3D12_HEAP_FLAG_NONE,
 		&DepthStencilDescriptor,
 		D3D12_RESOURCE_STATE_COMMON,
 		&OptimizedClear,
-		IID_PPV_ARGS(DepthStencilBuffer.GetAddressOf())));
+		IID_PPV_ARGS(DepthStencilBuffer.GetAddressOf()));
+	errorText = _com_error(hr).ErrorMessage();
 
 	// Create descriptor to mip level 0 of entire resource using the
 	// format of the resource.
@@ -142,6 +167,16 @@ void CRenderer::CreateSwapChain(int Width, int Height, HWND hWnd) {
 			DepthStencilBuffer.Get(),
 			D3D12_RESOURCE_STATE_COMMON,
 			D3D12_RESOURCE_STATE_DEPTH_WRITE));
+}
+
+void CRenderer::SetupViewport(int ScreenWidth, int ScreenHeight) {
+	D3D12_VIEWPORT vp;
+	vp.TopLeftX = 0.0f;
+	vp.TopLeftY = 0.0f;
+	vp.Width = static_cast<float>(ScreenWidth);
+	vp.Height = static_cast<float>(ScreenHeight);
+
+	CommandList->RSSetViewports(1, &vp);
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE CRenderer::GetCurrentBackBufferHeap() const {

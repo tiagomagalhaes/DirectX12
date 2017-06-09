@@ -35,8 +35,9 @@ private:
 	int CurrentBackBuffer = 0;
 
 	void CreateDevice();
-	void CreateSwapChain(int, int, HWND);
+	void SetupSwapChain(int, int, HWND);
 	void CreateDescriptorHeaps();
+	void SetupViewport(int ScreenWidth, int ScreenHeight);
 
 	D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentBackBufferHeap() const;
 	D3D12_CPU_DESCRIPTOR_HANDLE GetDepthStencilHeap() const;
